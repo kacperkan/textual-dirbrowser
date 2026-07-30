@@ -97,6 +97,10 @@ def human_size(num: float) -> str:
 class DirEntry:
     label: str
     value: str
+    # False marks a *leaf* entry (e.g. a file): it can be Space-selected but is
+    # never navigated into (→/l is a no-op) and can't be a `d` output mark.
+    # Defaults True so every existing caller keeps directory behaviour.
+    is_dir: bool = True
 
 
 @dataclass
@@ -455,7 +459,15 @@ class BrowserApp(App[list[str]]):
         idx = self.query_one("#nav", ListView).index
         if idx is None or idx >= len(self._entries):
             return
-        self._request_preview(self._entries[idx].value)
+        entry = self._entries[idx]
+        if not entry.is_dir:
+            # Leaf (file) entry has no directory listing to preview.
+            self._preview_target = entry.value
+            self.query_one("#preview-body", Static).update(
+                f"[dim]{markup_escape(Path(entry.value).name)}[/dim]"
+            )
+            return
+        self._request_preview(entry.value)
 
     def _request_preview(self, path: str) -> None:
         self._preview_target = path
@@ -598,7 +610,11 @@ class BrowserApp(App[list[str]]):
         lv = self.query_one("#nav", ListView)
         idx = lv.index
         if idx is not None and idx < len(self._entries):
-            self._navigate(self._entries[idx].value)
+            entry = self._entries[idx]
+            if not entry.is_dir:
+                # Leaf (file) entry — not navigable. Select it with Space.
+                return
+            self._navigate(entry.value)
 
     def action_add_current(self) -> None:
         if self._current not in self._selected_set:
@@ -780,7 +796,12 @@ class StartBrowserApp(BrowserApp):
         idx = lv.index
         if idx is None or idx >= len(self._entries):
             return
-        value = self._entries[idx].value
+        entry = self._entries[idx]
+        if not entry.is_dir:
+            # Output root must be a directory; a leaf (file) can't be marked.
+            self.notify("Can't mark a file as the output root.", severity="warning")
+            return
+        value = entry.value
         old = self._output_mark
         if old == value:
             self._output_mark = None
