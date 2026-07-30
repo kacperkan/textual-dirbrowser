@@ -1083,3 +1083,109 @@ def test_start_in_place_shift_s_is_inert():
         assert app.return_value is None
 
     asyncio.run(run())
+
+
+# ── leaf (file) entries: selectable, not navigable ────────────────────────────
+#
+# A DirEntry with is_dir=False marks a leaf (e.g. a file): it can be
+# Space-selected but never navigated into, and can't become the `d` output mark.
+# Defaults keep every existing (all-directory) caller unchanged.
+
+def _leaf_app(initial="/root"):
+    from textual_dirbrowser.browser import BrowserApp
+
+    tree = {
+        "/root": [
+            DirEntry(label="exp1", value="/root/exp1"),
+            DirEntry(label="clip.mp4", value="/root/clip.mp4", is_dir=False),
+        ],
+        "/root/exp1": [DirEntry(label="sub", value="/root/exp1/sub")],
+    }
+    return BrowserApp(
+        "t", initial, "/root",
+        list_fn=lambda p: (list(tree.get(p, [])), 0),
+        parent_fn=lambda _p: "/root",
+    )
+
+
+def test_dir_entry_is_dir_defaults_true():
+    # Existing callers construct DirEntry(label, value) with no is_dir — those
+    # entries must keep directory (navigable) behaviour.
+    assert DirEntry(label="x", value="/root/x").is_dir is True
+
+
+def test_leaf_entry_right_arrow_does_not_navigate():
+    """→/l on a leaf (file) entry is a no-op; only directories navigate."""
+    import asyncio
+
+    async def run():
+        app = _leaf_app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app._current == "/root"
+            await pilot.press("down")    # move to clip.mp4 (leaf, index 1)
+            await pilot.press("right")   # would enter — but a leaf can't
+            await pilot.pause()
+        assert app._current == "/root"   # unchanged, no crash
+
+    asyncio.run(run())
+
+
+def test_leaf_entry_space_selects():
+    """Space marks a leaf just like a directory (value-based selection)."""
+    import asyncio
+
+    async def run():
+        app = _leaf_app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("down")    # highlight clip.mp4
+            await pilot.press("space")   # select it
+            await pilot.pause()
+        assert app._selected == ["/root/clip.mp4"]
+
+    asyncio.run(run())
+
+
+def test_dir_entry_right_arrow_still_navigates():
+    """Guard is leaf-specific: a directory entry still enters on →."""
+    import asyncio
+
+    async def run():
+        app = _leaf_app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("right")   # highlighted exp1 (dir) — navigates
+            await pilot.pause()
+        assert app._current == "/root/exp1"
+
+    asyncio.run(run())
+
+
+def test_output_mark_refuses_leaf():
+    """`d` can't mark a leaf (file) as the output root — output must be a dir."""
+    import asyncio
+
+    async def run():
+        from textual_dirbrowser.browser import StartBrowserApp
+
+        tree = {
+            "/root": [
+                DirEntry(label="exp1", value="/root/exp1"),
+                DirEntry(label="clip.mp4", value="/root/clip.mp4", is_dir=False),
+            ],
+            "/root/exp1": [],
+        }
+        app = StartBrowserApp(
+            "t", "/root", "/root",
+            list_fn=lambda p: (list(tree.get(p, [])), 0),
+            parent_fn=lambda _p: "/root",
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("down")    # highlight clip.mp4 (leaf)
+            await pilot.press("d")       # attempt to mark — refused
+            await pilot.pause()
+            assert app._output_mark is None
+
+    asyncio.run(run())

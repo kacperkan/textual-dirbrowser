@@ -19,9 +19,12 @@ Every entry point takes:
   plus the number of plain files in the directory.
 - `parent_fn(path) -> str` — the parent of `path` in your namespace.
 
-`DirEntry(label, value)`: `label` is the display text (Rich markup allowed),
-`value` the opaque path handle passed back to your callbacks and returned
-from the browse.
+`DirEntry(label, value, is_dir=True)`: `label` is the display text (Rich markup
+allowed), `value` the opaque path handle passed back to your callbacks and
+returned from the browse. `is_dir` defaults to `True`; set it `False` to emit a
+**leaf** entry (e.g. a file) — a leaf can be Space-selected but is never
+navigated into (`→`/`l` is a no-op) and can't be a `d` output mark. This lets a
+`list_fn` return files alongside directories in the same listing.
 
 ## Entry points
 
