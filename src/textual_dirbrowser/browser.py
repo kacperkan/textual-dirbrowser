@@ -1067,7 +1067,14 @@ class MultiSelectApp(App[list[str]]):
         Binding("ctrl+p", "cursor_up", "Up", show=False, priority=True),
     ]
 
-    def __init__(self, title: str, choices: list[tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        title: str,
+        choices: list[tuple[str, str]],
+        *,
+        auto_advance: bool = True,
+        live_filter: bool = True,
+    ) -> None:
         super().__init__()
         self._title = title
         # entries preserve the caller's order; label is the raw display text
@@ -1081,6 +1088,13 @@ class MultiSelectApp(App[list[str]]):
         self._selected_order: list[str] = []
         self._query = ""
         self._filter_timer = None
+        # auto_advance: space/tab moves the cursor to the next row after a
+        # toggle. live_filter: every printable key feeds the query (fzf-style);
+        # when off, `/` opens query editing, enter accepts, esc clears — and
+        # j/k navigate while the query is closed.
+        self._auto_advance = auto_advance
+        self._live_filter = live_filter
+        self._query_editing = live_filter
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -1156,8 +1170,12 @@ class MultiSelectApp(App[list[str]]):
             if hidden > 0
             else ""
         )
-        cursor = "[accent]▏[/accent]"
-        body = markup_escape(self._query) or "[dim]type to filter[/dim]"
+        if self._query_editing:
+            cursor = "[accent]▏[/accent]"
+            body = markup_escape(self._query) or "[dim]type to filter[/dim]"
+        else:
+            cursor = ""
+            body = markup_escape(self._query) or "[dim]press / to filter[/dim]"
         counts = (
             f"  [dim]{len(self._matches)}/{len(self._all)}"
             f" · {len(self._selected_order)} selected[/dim]"
@@ -1189,6 +1207,19 @@ class MultiSelectApp(App[list[str]]):
     def on_key(self, event: events.Key) -> None:
         # space/tab/enter/esc/arrows are handled by (priority) bindings; here we
         # only grow/shrink the live query from printable input.
+        if not self._query_editing:
+            # query closed (live_filter off): `/` opens it, j/k navigate.
+            if event.key == "slash":
+                self._query_editing = True
+                self._update_query_bar()
+                event.stop()
+            elif event.key == "j":
+                self.action_cursor_down()
+                event.stop()
+            elif event.key == "k":
+                self.action_cursor_up()
+                event.stop()
+            return
         if event.key == "backspace":
             if self._query:
                 self._query = self._query[:-1]
@@ -1227,7 +1258,7 @@ class MultiSelectApp(App[list[str]]):
         self._update_query_bar()
         self._sync_selection()
         # auto-advance so repeated space/tab picks a run of rows quickly
-        if idx < len(self._entries) - 1:
+        if self._auto_advance and idx < len(self._entries) - 1:
             lv.action_cursor_down()
 
     def action_select_all(self) -> None:
@@ -1251,6 +1282,16 @@ class MultiSelectApp(App[list[str]]):
         self._sync_selection()
 
     def action_confirm(self) -> None:
+        # live_filter off: enter while the query is open accepts it (stays
+        # filtered) instead of confirming the selection.
+        if not self._live_filter and self._query_editing:
+            self._query_editing = False
+            if self._filter_timer is not None:
+                self._filter_timer.stop()
+                self._filter_timer = None
+            self._recompute()
+            self._update_query_bar()
+            return
         if self._selected_order:
             self.exit(list(self._selected_order))
             return
@@ -1263,6 +1304,13 @@ class MultiSelectApp(App[list[str]]):
             self.exit([])
 
     def action_clear_or_abort(self) -> None:
+        # live_filter off: esc while the query is open closes it and clears.
+        if not self._live_filter and self._query_editing:
+            self._query_editing = False
+            self._query = ""
+            self._recompute()
+            self._update_query_bar()
+            return
         if self._query:
             self._query = ""
             self._recompute()
@@ -1275,7 +1323,11 @@ class MultiSelectApp(App[list[str]]):
 
 
 def run_multi_select(
-    title: str, choices: list[tuple[str, str]]
+    title: str,
+    choices: list[tuple[str, str]],
+    *,
+    auto_advance: bool = True,
+    live_filter: bool = True,
 ) -> list[str] | None:
     """fzf-style flat multi-select over a fixed list.
 
@@ -1285,5 +1337,12 @@ def run_multi_select(
     clears the query or cancels when it is empty. Returns selected values in
     selection order, an empty list if nothing was confirmed, or None if the
     user aborted.
+
+    auto_advance=False keeps the cursor on the toggled row instead of moving to
+    the next one. live_filter=False starts with the query closed: printable
+    keys no longer filter (j/k navigate instead) until ``/`` opens the query —
+    enter accepts it, esc closes and clears it.
     """
-    return MultiSelectApp(title, choices).run()
+    return MultiSelectApp(
+        title, choices, auto_advance=auto_advance, live_filter=live_filter
+    ).run()

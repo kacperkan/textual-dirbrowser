@@ -1,6 +1,6 @@
 [project]
 name = "textual-dirbrowser"
-version = "0.2.0"
+version = "0.3.0"
 description = "Textual TUI directory browser with injectable listing backends (local FS, S3, remote — you supply the callbacks)"
 readme = "README.md"
 requires-python = ">=3.12"
