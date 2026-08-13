@@ -77,6 +77,12 @@ Type to filter live · `space`/`tab` toggle · `ctrl+a` toggle all matches ·
 `enter` confirm (highlighted row if nothing toggled) · `esc` clear query /
 cancel · `ctrl+c` abort.
 
+Two keyword tweaks (0.3.0): `auto_advance=False` keeps the cursor on the
+toggled row instead of jumping to the next one; `live_filter=False` starts
+with the query closed — printable keys stop filtering (`j`/`k` navigate
+instead) until `/` opens the query, `enter` accepts it, `esc` closes and
+clears it.
+
 ## Restyling
 
 The App classes (`BrowserApp`, `StartBrowserApp`, `MultiSelectApp`) are

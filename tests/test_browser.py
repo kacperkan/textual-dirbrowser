@@ -1189,3 +1189,100 @@ def test_output_mark_refuses_leaf():
             assert app._output_mark is None
 
     asyncio.run(run())
+
+
+def test_multiselect_no_auto_advance_keeps_cursor():
+    from textual_dirbrowser.browser import MultiSelectApp
+
+    choices = [(f"job-{i}", f"/p/{i}.sh") for i in range(5)]
+
+    async def run():
+        app = MultiSelectApp("pick", choices, auto_advance=False)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            lv = app.query_one("#nav")
+            assert lv.index == 0
+            await pilot.press("space")
+            await pilot.pause()
+            assert lv.index == 0  # no jump
+            assert app._selected_order == ["/p/0.sh"]
+
+    asyncio.run(run())
+
+
+def test_multiselect_auto_advance_default_still_jumps():
+    choices = [(f"job-{i}", f"/p/{i}.sh") for i in range(5)]
+
+    async def run():
+        app = _ms_app(choices)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            assert app.query_one("#nav").index == 1
+
+    asyncio.run(run())
+
+
+def test_multiselect_closed_filter_navigates_with_jk():
+    from textual_dirbrowser.browser import MultiSelectApp
+
+    choices = [(f"job-{i}", f"/p/{i}.sh") for i in range(5)]
+
+    async def run():
+        app = MultiSelectApp("pick", choices, live_filter=False)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("j")
+            await pilot.press("j")
+            await pilot.pause()
+            assert app.query_one("#nav").index == 2
+            assert app._query == ""  # j did not type into the query
+
+    asyncio.run(run())
+
+
+def test_multiselect_slash_opens_filter_enter_accepts():
+    from textual_dirbrowser.browser import MultiSelectApp
+
+    choices = [("alpha", "/p/a.sh"), ("beta", "/p/b.sh")]
+
+    async def run():
+        app = MultiSelectApp("pick", choices, live_filter=False)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("slash")
+            await pilot.pause()
+            assert app._query_editing is True
+            await _type(pilot, "beta")
+            await _settle(pilot)
+            assert [e.value for e in app._matches] == ["/p/b.sh"]
+            await pilot.press("enter")
+            await pilot.pause()
+            # enter accepted the query (no confirm/exit), still filtered
+            assert app._query_editing is False
+            assert [e.value for e in app._matches] == ["/p/b.sh"]
+            assert app.return_value is None  # app still running (not exited)
+
+    asyncio.run(run())
+
+
+def test_multiselect_esc_closes_and_clears_filter():
+    from textual_dirbrowser.browser import MultiSelectApp
+
+    choices = [("alpha", "/p/a.sh"), ("beta", "/p/b.sh")]
+
+    async def run():
+        app = MultiSelectApp("pick", choices, live_filter=False)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("slash")
+            await _type(pilot, "beta")
+            await _settle(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app._query_editing is False
+            assert app._query == ""
+            assert len(app._matches) == 2
+
+    asyncio.run(run())
